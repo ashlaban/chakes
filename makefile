@@ -3,6 +3,10 @@ SOURCE=$(wildcard */*.py)
 .PHONY: all
 all: run-game-engine
 
+.PHONY: run-client
+run-client:
+	cd client && npm run dev
+
 .PHONY: run-server
 run-server:
 	uv run uvicorn chakes.server.app:app --reload
