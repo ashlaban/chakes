@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import * as api from '../services/api'
-import { gameSocket } from '../services/gameSocket'
+import { gameSocket, type SocketStatus } from '../services/gameSocket'
 import { RttMonitor } from '../services/rtt'
 import { useSessionStore } from './session'
-import type { Board, Cooldowns, Color, PieceInstance } from '../services/api'
+import { useErrorStore } from './errors'
+import type { Board, Cooldowns, Color, PieceInstance } from '../domain/types'
 
 interface PendingMove {
   id: string
@@ -76,6 +77,7 @@ export const useGameStore = defineStore('game', () => {
   const rttMonitor = new RttMonitor(gameSocket)
 
   // --- WS subscription lifecycle ---
+  const connectionStatus = ref<SocketStatus>('idle')
   let unsubscribers: Array<() => void> = []
   let currentLobby: string | null = null
 
@@ -88,6 +90,7 @@ export const useGameStore = defineStore('game', () => {
     rttMonitor.start()
 
     unsubscribers = [
+      gameSocket.onStatus((s) => { connectionStatus.value = s }),
       gameSocket.on('board', (b) => { authoritativeBoard.value = b }),
       gameSocket.on('cooldowns', (c) => {
         serverCooldowns = c
@@ -152,29 +155,6 @@ export const useGameStore = defineStore('game', () => {
         }, 300)
       }),
     ]
-
-    // Reconciliation: drop pending entries when authoritative state already reflects the move
-    watch(authoritativeBoard, (b) => {
-      for (const [id, m] of pendingMoves.value) {
-        if (m.status !== 'pending') continue
-        const [sr, sc] = m.src
-        const [dr, dc] = m.dst
-        const srcEmpty = b[sr]?.[sc] == null
-        const dstPiece = b[dr]?.[dc]
-        if (srcEmpty && dstPiece != null && dstPiece.owner === playerColor.value) {
-          pendingMoves.value.delete(id)
-        }
-      }
-    }, { deep: false })
-
-    watch(authoritativeBoard, (b) => {
-      if (!selected.value) return
-      const [r, c] = selected.value
-      const piece = b[r]?.[c]
-      if (!piece || piece.owner !== playerColor.value) {
-        deselect()
-      }
-    })
   }
 
   function disconnect(): void {
@@ -183,6 +163,7 @@ export const useGameStore = defineStore('game', () => {
     rttMonitor.stop()
     rtt.value = null
     gameSocket.disconnect()
+    connectionStatus.value = 'idle' // set here: the status listener is already gone
     currentLobby = null
     resetGameState()
   }
@@ -218,7 +199,11 @@ export const useGameStore = defineStore('game', () => {
   ): Promise<void> {
     if (!currentLobby) return
     resetGameState()
-    await api.createGame(currentLobby, gameType, cooldownSettings, upsideDown)
+    try {
+      await api.createGame(currentLobby, gameType, cooldownSettings, upsideDown)
+    } catch (e) {
+      useErrorStore().report(e, 'Could not start the game')
+    }
   }
 
   function selectPiece(r: number, c: number): void {
@@ -314,12 +299,43 @@ export const useGameStore = defineStore('game', () => {
     if (fr !== r || fc !== c) attemptMove(r, c)
   }
 
+  // --- Reactions to authoritative state ---
+  //
+  // Registered once at store setup, not per connection: the store outlives any
+  // single lobby, so watchers created inside connect() would accumulate on
+  // every reconnect with nothing to dispose them. Both are no-ops while
+  // disconnected, since the state they act on is cleared by resetGameState().
+
+  // Drop pending entries once the authoritative board already reflects the move.
+  watch(authoritativeBoard, (b) => {
+    for (const [id, m] of pendingMoves.value) {
+      if (m.status !== 'pending') continue
+      const [sr, sc] = m.src
+      const [dr, dc] = m.dst
+      const srcEmpty = b[sr]?.[sc] == null
+      const dstPiece = b[dr]?.[dc]
+      if (srcEmpty && dstPiece != null && dstPiece.owner === playerColor.value) {
+        pendingMoves.value.delete(id)
+      }
+    }
+  }, { deep: false })
+
+  // Clear the selection if the selected piece is no longer ours.
+  watch(authoritativeBoard, (b) => {
+    if (!selected.value) return
+    const [r, c] = selected.value
+    const piece = b[r]?.[c]
+    if (!piece || piece.owner !== playerColor.value) {
+      deselect()
+    }
+  })
+
   return {
     // state
     board, cooldowns, maxCooldowns, pieceNames, stablePromotionNames, playerColor, gameId, winner,
     inCheck, inAntiCheck,
     selected, legalMoves, selectedPromotion, rtt,
-    latencyHidingEnabled, rejectedSquares,
+    latencyHidingEnabled, rejectedSquares, connectionStatus,
     // actions
     connect, disconnect, resetGameState, startNewGame,
     setLatencyHiding,

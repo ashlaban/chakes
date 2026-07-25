@@ -19,7 +19,14 @@ const catalog = useCatalogStore()
 const {
   board, cooldowns, maxCooldowns, stablePromotionNames, playerColor, gameId, winner,
   selected, legalMoves, selectedPromotion, rtt, inCheck, inAntiCheck, rejectedSquares,
+  connectionStatus,
 } = storeToRefs(game)
+
+// 'idle' is a disconnect we asked for, and 'connecting' settles on its own;
+// neither is worth interrupting the player over.
+const connectionLost = computed(
+  () => connectionStatus.value === 'closed' || connectionStatus.value === 'error',
+)
 
 type StatusKind = 'check' | 'anti-check' | 'both' | 'mate' | 'anti-mate' | 'win' | 'empty'
 const statusMessage = computed<{ text: string; kind: StatusKind }>(() => {
@@ -93,6 +100,13 @@ function copyLobbyName() {
     {{ rttLabel }}
   </div>
   <section id="center">
+    <p
+      v-if="connectionLost"
+      class="connection-lost"
+      role="alert"
+    >
+      Connection to the server was lost. Reload the page to rejoin.
+    </p>
     <div class="room-name">
       Lobby: {{ name }}
       <button
@@ -213,6 +227,21 @@ function copyLobbyName() {
 .waiting-text {
   color: #888;
   font-size: 15px;
+}
+.connection-lost {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(220, 50, 50, 0.5);
+  background: #fde2e2;
+  color: #7a1f1f;
+  font-size: 15px;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .connection-lost {
+    background: #3a1414;
+    color: #f5c6c6;
+  }
 }
 .rtt-badge {
   position: fixed;

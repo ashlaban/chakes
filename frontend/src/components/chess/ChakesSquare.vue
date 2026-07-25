@@ -10,7 +10,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import PieceSprite from './PieceSprite.vue'
-import type { PieceInstance, Color } from '../../services/api'
+import type { PieceInstance, Color } from '../../domain/types'
 
 // --- Props & emits ---
 

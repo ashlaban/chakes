@@ -84,7 +84,7 @@ run-frontend: check-frontend
 # === Test ===
 
 .PHONY: test
-test: test-engine test-backend
+test: test-engine test-backend test-frontend
 
 .PHONY: test-engine
 test-engine: check-engine
@@ -93,3 +93,7 @@ test-engine: check-engine
 .PHONY: test-backend
 test-backend:
 	uv run pytest backend/tests
+
+.PHONY: test-frontend
+test-frontend:
+	cd frontend && npm test

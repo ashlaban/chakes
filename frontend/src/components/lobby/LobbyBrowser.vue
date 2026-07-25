@@ -11,6 +11,9 @@ const nameInput = ref('')
 
 async function onCreate() {
   const name = await lobby.create(nameInput.value.trim() || undefined)
+  // A failed creation is already reported; stay put rather than navigating to
+  // a lobby that does not exist.
+  if (name === null) return
   router.push({ name: 'lobby', params: { name } })
 }
 

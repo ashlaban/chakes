@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
 import ChakesSquare from './ChakesSquare.vue'
-import type { Board, Cooldowns, Color } from '../../services/api'
+import type { Board, Cooldowns, Color } from '../../domain/types'
 import { useBoardOrientation } from '../../composables/useBoardOrientation'
 
 // Coordinate label alphabet: a-z, A-Z, then Greek α-ω (76 total, covers up to 64 columns)

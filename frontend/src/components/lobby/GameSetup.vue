@@ -2,8 +2,10 @@
 import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCatalogStore } from '../../stores/catalog'
+import { useErrorStore } from '../../stores/errors'
 import { getPieceDefs, getInitialBoard } from '../../services/api'
-import type { PieceDef, InitialBoardResponse, PieceInstance } from '../../services/api'
+import type { PieceDef, InitialBoardResponse } from '../../services/api'
+import type { PieceInstance } from '../../domain/types'
 import PieceSprite from '../chess/PieceSprite.vue'
 
 type Settings = { gameType: string; cooldowns: Record<string, number>; upsideDown: boolean; latencyHiding: boolean }
@@ -43,13 +45,17 @@ function setPieceCooldown(name: string, concrete: number) {
 }
 
 watch(selectedGameType, async (gameType) => {
-  const [defs, board] = await Promise.all([getPieceDefs(gameType), getInitialBoard(gameType)])
-  currentPieceDefs.value = [...defs].sort((a, b) => a.name.localeCompare(b.name))
-  const prev = cooldownOffsets.value
-  cooldownOffsets.value = Object.fromEntries(
-    currentPieceDefs.value.map((p) => [p.name, prev[p.name] ?? 0])
-  )
-  initialBoard.value = board
+  try {
+    const [defs, board] = await Promise.all([getPieceDefs(gameType), getInitialBoard(gameType)])
+    currentPieceDefs.value = [...defs].sort((a, b) => a.name.localeCompare(b.name))
+    const prev = cooldownOffsets.value
+    cooldownOffsets.value = Object.fromEntries(
+      currentPieceDefs.value.map((p) => [p.name, prev[p.name] ?? 0])
+    )
+    initialBoard.value = board
+  } catch (e) {
+    useErrorStore().report(e, 'Could not load the pieces for this game type')
+  }
 }, { immediate: true })
 
 function adjustBase(delta: number) {

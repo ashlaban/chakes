@@ -1,4 +1,4 @@
-from chakes.backend.messages import GameStateMessage
+from chakes.backend.messages import GameStateMessage, LobbyJoinedMessage
 from chakes.backend.models import ActiveGame, GameDef
 
 
@@ -115,6 +115,20 @@ def test_game_state_message_no_winner_omits_winner_key():
     msg = GameStateMessage.from_active_game(game)
     dumped = msg.model_dump(exclude_none=True)
     assert "winner" not in dumped
+
+
+# The client dispatches on `type`; without it, it cannot tell one outgoing
+# message from another except by guessing from which fields are present.
+
+def test_game_state_message_is_tagged_on_the_wire():
+    game = ActiveGame(GameDef())
+    msg = GameStateMessage.from_active_game(game)
+    assert msg.model_dump(exclude_none=True)["type"] == "game_state"
+
+
+def test_lobby_joined_message_is_tagged_on_the_wire():
+    msg = LobbyJoinedMessage(color="white")
+    assert msg.model_dump(exclude_none=True)["type"] == "lobby_joined"
 
 
 # ---------------------------------------------------------------------------

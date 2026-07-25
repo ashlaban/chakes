@@ -1,14 +1,23 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 from chakes.backend.models import ActiveGame
 from chakes.engine.engine import Player
 
+# Every outgoing message carries a `type` tag, mirroring the discriminated
+# union used for incoming messages in models.py. Without it the client has to
+# guess a message's kind from which fields happen to be present, which cannot
+# distinguish "this field is absent" from "this field is falsy".
+
 
 class LobbyJoinedMessage(BaseModel):
+    type: Literal["lobby_joined"] = "lobby_joined"
     color: str
 
 
 class GameStateMessage(BaseModel):
+    type: Literal["game_state"] = "game_state"
     board: list[list[dict[str, str] | None]]
     cooldowns: list[list[float]]
     max_cooldowns: dict[str, float] | None = None
