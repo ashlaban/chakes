@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../services/api'
+import { useErrorStore } from './errors'
 import type { GameType } from '../services/api'
 
 // Piece definitions are deliberately absent here: they vary per game type, and
@@ -11,8 +12,12 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   async function load(): Promise<void> {
     if (loaded.value) return
-    gameTypes.value = await api.getGameTypes()
-    loaded.value = true
+    try {
+      gameTypes.value = await api.getGameTypes()
+      loaded.value = true // only on success, so a later attempt can retry
+    } catch (e) {
+      useErrorStore().report(e, 'Could not load the available game types')
+    }
   }
 
   return { gameTypes, loaded, load }

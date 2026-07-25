@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import * as api from '../services/api'
-import { gameSocket } from '../services/gameSocket'
+import { gameSocket, type SocketStatus } from '../services/gameSocket'
 import { RttMonitor } from '../services/rtt'
 import { useSessionStore } from './session'
+import { useErrorStore } from './errors'
 import type { Board, Cooldowns, Color, PieceInstance } from '../domain/types'
 
 interface PendingMove {
@@ -76,6 +77,7 @@ export const useGameStore = defineStore('game', () => {
   const rttMonitor = new RttMonitor(gameSocket)
 
   // --- WS subscription lifecycle ---
+  const connectionStatus = ref<SocketStatus>('idle')
   let unsubscribers: Array<() => void> = []
   let currentLobby: string | null = null
 
@@ -88,6 +90,7 @@ export const useGameStore = defineStore('game', () => {
     rttMonitor.start()
 
     unsubscribers = [
+      gameSocket.onStatus((s) => { connectionStatus.value = s }),
       gameSocket.on('board', (b) => { authoritativeBoard.value = b }),
       gameSocket.on('cooldowns', (c) => {
         serverCooldowns = c
@@ -160,6 +163,7 @@ export const useGameStore = defineStore('game', () => {
     rttMonitor.stop()
     rtt.value = null
     gameSocket.disconnect()
+    connectionStatus.value = 'idle' // set here: the status listener is already gone
     currentLobby = null
     resetGameState()
   }
@@ -195,7 +199,11 @@ export const useGameStore = defineStore('game', () => {
   ): Promise<void> {
     if (!currentLobby) return
     resetGameState()
-    await api.createGame(currentLobby, gameType, cooldownSettings, upsideDown)
+    try {
+      await api.createGame(currentLobby, gameType, cooldownSettings, upsideDown)
+    } catch (e) {
+      useErrorStore().report(e, 'Could not start the game')
+    }
   }
 
   function selectPiece(r: number, c: number): void {
@@ -327,7 +335,7 @@ export const useGameStore = defineStore('game', () => {
     board, cooldowns, maxCooldowns, pieceNames, stablePromotionNames, playerColor, gameId, winner,
     inCheck, inAntiCheck,
     selected, legalMoves, selectedPromotion, rtt,
-    latencyHidingEnabled, rejectedSquares,
+    latencyHidingEnabled, rejectedSquares, connectionStatus,
     // actions
     connect, disconnect, resetGameState, startNewGame,
     setLatencyHiding,

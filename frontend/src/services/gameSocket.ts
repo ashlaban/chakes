@@ -29,29 +29,41 @@ export type DecodedEvent = {
  * coordinates and the client's [r, c] convention all meet, so it is the part
  * worth testing in isolation.
  *
- * The server has no discriminator on its state messages, so membership is
- * tested rather than truthiness wherever absent and falsy must differ (a
- * finished game sends `winner: null`; incremental updates omit the immutable
- * fields entirely).
+ * Dispatch is on the server's `type` tag. Within a game state message, fields
+ * the server omits are still detected by membership rather than truthiness,
+ * because the backend drops null fields from the wire entirely and "absent"
+ * has to stay distinguishable from "false".
  */
 export function decodeServerMessage(data: Record<string, unknown>): DecodedEvent[] {
-  if (data.type === 'pong') return [{ event: 'pong', payload: { id: data.id as string } }]
-  if (data.type === 'move_result') {
-    return [{
-      event: 'moveResult',
-      payload: {
-        ok: data.ok as boolean,
-        error: data.error as string | undefined,
-        client_move_id: data.client_move_id as string | null | undefined,
-      },
-    }]
+  switch (data.type) {
+    case 'pong':
+      return [{ event: 'pong', payload: { id: data.id as string } }]
+    case 'move_result':
+      return [{
+        event: 'moveResult',
+        payload: {
+          ok: data.ok as boolean,
+          error: data.error as string | undefined,
+          client_move_id: data.client_move_id as string | null | undefined,
+        },
+      }]
+    case 'lobby_joined':
+      return [{ event: 'color', payload: data.color as Color }]
+    case 'game_state':
+      return decodeGameState(data)
+    // Reply to an explicit legal-moves request. The client no longer asks for
+    // these — they arrive batched in the game state message — so there is
+    // nothing to do with one.
+    case 'legal_moves':
+      return []
+    default:
+      // A message kind this client does not know about. Ignoring it keeps an
+      // older client working against a newer server.
+      return []
   }
-  // Replies to an explicit legal-moves request. The client no longer asks for
-  // these — legal moves arrive batched in the game state message below — but
-  // the server can still send them, so they must not fall through to the
-  // state-message decoding.
-  if (data.type === 'legal_moves') return []
+}
 
+function decodeGameState(data: Record<string, unknown>): DecodedEvent[] {
   const events: DecodedEvent[] = []
   if (data.board) events.push({ event: 'board', payload: data.board as Board })
   if (data.cooldowns) events.push({ event: 'cooldowns', payload: data.cooldowns as Cooldowns })
@@ -59,7 +71,6 @@ export function decodeServerMessage(data: Record<string, unknown>): DecodedEvent
     events.push({ event: 'maxCooldowns', payload: data.max_cooldowns as Record<string, number> })
   }
   if (data.piece_names) events.push({ event: 'pieceNames', payload: data.piece_names as string[] })
-  if (data.color) events.push({ event: 'color', payload: data.color as Color })
   if (data.game_id) events.push({ event: 'gameId', payload: data.game_id as string })
   if ('winner' in data) {
     events.push({ event: 'winner', payload: (data.winner as Color | null) ?? null })
@@ -100,22 +111,70 @@ function decodeLegalMoves(wire: WireLegalMoves): Record<string, Set<string>> {
   return out
 }
 
+/**
+ * Connection state, as far as this client can observe it.
+ *
+ * `closed` means the server or the network dropped us, which is a state the UI
+ * must be able to show; `idle` means we closed the socket ourselves and is not
+ * worth reporting. There is no automatic reconnect — resuming mid-game needs a
+ * decision about replaying state, so a caller has to ask for it explicitly.
+ */
+export type SocketStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
+
 export class GameSocket {
   private ws: WebSocket | null = null
   private listeners: { [E in keyof GameSocketEvents]?: Set<Listener<E>> } = {}
+  private statusListeners = new Set<(status: SocketStatus) => void>()
+  private _status: SocketStatus = 'idle'
+
+  get status(): SocketStatus {
+    return this._status
+  }
 
   connect(lobbyName: string, token: string): void {
     this.disconnect()
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    this.ws = new WebSocket(
+    const ws = new WebSocket(
       `${protocol}//${location.host}/api/lobby/${lobbyName}/ws?token=${token}`,
     )
-    this.ws.onmessage = (e) => this.handleMessage(e)
+    this.ws = ws
+    this.setStatus('connecting')
+
+    // Every handler checks that it still belongs to the current socket: a
+    // replaced socket goes on emitting close and error events after we have
+    // moved on, and those must not overwrite the new socket's status.
+    ws.onmessage = (e) => { if (this.ws === ws) this.handleMessage(e) }
+    ws.onopen = () => { if (this.ws === ws) this.setStatus('open') }
+    ws.onerror = () => { if (this.ws === ws) this.setStatus('error') }
+    ws.onclose = () => {
+      if (this.ws !== ws) return
+      this.ws = null
+      // An error already explains the drop; do not overwrite it with the
+      // vaguer 'closed' that always follows.
+      if (this._status !== 'error') this.setStatus('closed')
+    }
   }
 
   disconnect(): void {
-    this.ws?.close()
+    const ws = this.ws
     this.ws = null
+    if (ws) {
+      // Detach first: this close is deliberate, so it must not be reported.
+      ws.onmessage = ws.onopen = ws.onerror = ws.onclose = null
+      ws.close()
+    }
+    this.setStatus('idle')
+  }
+
+  onStatus(listener: (status: SocketStatus) => void): () => void {
+    this.statusListeners.add(listener)
+    return () => this.statusListeners.delete(listener)
+  }
+
+  private setStatus(status: SocketStatus): void {
+    if (this._status === status) return
+    this._status = status
+    this.statusListeners.forEach((l) => l(status))
   }
 
   send(msg: object): void {
