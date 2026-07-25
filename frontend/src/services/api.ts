@@ -1,7 +1,4 @@
-export type Color = 'white' | 'black'
-export type PieceInstance = { name: string; owner: Color; pending?: boolean }
-export type Board = (PieceInstance | null)[][]
-export type Cooldowns = number[][]
+import type { Board } from '../domain/types'
 
 export interface PieceDef {
   name: string
@@ -49,21 +46,6 @@ export async function createGame(
   return String(data.game_id)
 }
 
-
-export async function sendMove(
-  lobbyName: string,
-  gameId: string,
-  fromR: number, fromC: number,
-  toR: number, toC: number,
-  promotion?: string,
-): Promise<void> {
-  await fetch(`/api/lobby/${lobbyName}/game/${gameId}/move`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ src: { x: fromC, y: fromR }, dst: { x: toC, y: toR }, promotion }),
-  })
-}
-
 export interface PieceCooldown {
   name: string
   cooldown: number
@@ -96,7 +78,7 @@ export async function listLobbies(): Promise<LobbyListResponse> {
 }
 
 export interface InitialBoardResponse {
-  board: (PieceInstance | null)[][]
+  board: Board
   size_x: number
   size_y: number
 }

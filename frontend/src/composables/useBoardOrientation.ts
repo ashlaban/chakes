@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import type { Board, Cooldowns, Color } from '../services/api'
+import type { Board, Cooldowns, Color } from '../domain/types'
 
 export function useBoardOrientation(
   board: Ref<Board>,
@@ -29,12 +29,5 @@ export function useBoardOrientation(
     return [rows - 1 - displayR, displayC]
   }
 
-  function boardToDisplay(r: number, c: number): [number, number] {
-    const rows = board.value.length
-    const cols = board.value[0]?.length ?? 0
-    if (playerColor.value === 'black') return [r, cols - 1 - c]
-    return [rows - 1 - r, c]
-  }
-
-  return { displayBoard, displayCooldowns, displayToBoard, boardToDisplay }
+  return { displayBoard, displayCooldowns, displayToBoard }
 }

@@ -3,7 +3,8 @@ import { ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useCatalogStore } from '../../stores/catalog'
 import { getPieceDefs, getInitialBoard } from '../../services/api'
-import type { PieceDef, InitialBoardResponse, PieceInstance } from '../../services/api'
+import type { PieceDef, InitialBoardResponse } from '../../services/api'
+import type { PieceInstance } from '../../domain/types'
 import PieceSprite from '../chess/PieceSprite.vue'
 
 type Settings = { gameType: string; cooldowns: Record<string, number>; upsideDown: boolean; latencyHiding: boolean }

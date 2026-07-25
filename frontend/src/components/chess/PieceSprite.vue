@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { pieceImages } from '../../assets/pieceImages'
-import type { Color } from '../../services/api'
+import type { Color } from '../../domain/types'
 
 const props = defineProps<{
   name: string

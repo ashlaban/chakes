@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import PieceSprite from './PieceSprite.vue'
-import type { Color } from '../../services/api'
+import type { Color } from '../../domain/types'
 
 const props = defineProps<{
   pieceNames: string[]

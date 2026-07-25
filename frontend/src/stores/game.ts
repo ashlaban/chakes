@@ -4,7 +4,7 @@ import * as api from '../services/api'
 import { gameSocket } from '../services/gameSocket'
 import { RttMonitor } from '../services/rtt'
 import { useSessionStore } from './session'
-import type { Board, Cooldowns, Color, PieceInstance } from '../services/api'
+import type { Board, Cooldowns, Color, PieceInstance } from '../domain/types'
 
 interface PendingMove {
   id: string
@@ -152,29 +152,6 @@ export const useGameStore = defineStore('game', () => {
         }, 300)
       }),
     ]
-
-    // Reconciliation: drop pending entries when authoritative state already reflects the move
-    watch(authoritativeBoard, (b) => {
-      for (const [id, m] of pendingMoves.value) {
-        if (m.status !== 'pending') continue
-        const [sr, sc] = m.src
-        const [dr, dc] = m.dst
-        const srcEmpty = b[sr]?.[sc] == null
-        const dstPiece = b[dr]?.[dc]
-        if (srcEmpty && dstPiece != null && dstPiece.owner === playerColor.value) {
-          pendingMoves.value.delete(id)
-        }
-      }
-    }, { deep: false })
-
-    watch(authoritativeBoard, (b) => {
-      if (!selected.value) return
-      const [r, c] = selected.value
-      const piece = b[r]?.[c]
-      if (!piece || piece.owner !== playerColor.value) {
-        deselect()
-      }
-    })
   }
 
   function disconnect(): void {
@@ -313,6 +290,37 @@ export const useGameStore = defineStore('game', () => {
     const [fr, fc] = selected.value
     if (fr !== r || fc !== c) attemptMove(r, c)
   }
+
+  // --- Reactions to authoritative state ---
+  //
+  // Registered once at store setup, not per connection: the store outlives any
+  // single lobby, so watchers created inside connect() would accumulate on
+  // every reconnect with nothing to dispose them. Both are no-ops while
+  // disconnected, since the state they act on is cleared by resetGameState().
+
+  // Drop pending entries once the authoritative board already reflects the move.
+  watch(authoritativeBoard, (b) => {
+    for (const [id, m] of pendingMoves.value) {
+      if (m.status !== 'pending') continue
+      const [sr, sc] = m.src
+      const [dr, dc] = m.dst
+      const srcEmpty = b[sr]?.[sc] == null
+      const dstPiece = b[dr]?.[dc]
+      if (srcEmpty && dstPiece != null && dstPiece.owner === playerColor.value) {
+        pendingMoves.value.delete(id)
+      }
+    }
+  }, { deep: false })
+
+  // Clear the selection if the selected piece is no longer ours.
+  watch(authoritativeBoard, (b) => {
+    if (!selected.value) return
+    const [r, c] = selected.value
+    const piece = b[r]?.[c]
+    if (!piece || piece.owner !== playerColor.value) {
+      deselect()
+    }
+  })
 
   return {
     // state
